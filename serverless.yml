@@ -1,0 +1,26 @@
+org: abeltyr
+app: image
+service: image
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  versionFunctions: false # no function versioning
+  region: us-east-1 # The AWS region
+  apiGateway:
+    shouldStartNameWithService: true
+
+plugins:
+  - serverless-offline
+  - serverless-plugin-typescript
+
+custom:
+  serverlessPluginTypescript:
+    tsConfigFileLocation: "./tsconfig.build.json"
+
+functions:
+  api:
+    handler: src/handler.handler # Path to lambda handler
+    events:
+      - httpApi: "*"
