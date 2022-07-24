@@ -3,8 +3,7 @@ import * as express from "express";
 import * as multer from "multer";
 import * as sharp from "sharp";
 import * as bodyParser from "body-parser";
-import * as fs from "fs";
-import * as path from "path";
+import * as sizeOf from "buffer-image-size";
 import * as cors from "cors";
 import axios from "axios";
 
@@ -18,47 +17,135 @@ app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.put("/upload", upload.single("fileData"), async (req: any, res) => {
+app.put("/uploadImage", upload.single("file"), async (req: any, res) => {
   try {
-    // console.log("formattedFile", formattedFile._final.);
+    let { signedUrl } = req.body;
+    let file = req.file;
 
-    if (!req.file)
+    // Validate the input fields
+
+    if (!signedUrl)
       return res.json({
-        Status: "NOtOK",
-        Message: "fileData is a required Field",
+        Status: "Failed",
+        Message: "Input Issue: The field signedUrl is a required.",
       });
 
-    if (!req.body && !req.body.putSignedUrl)
+    if (!file)
       return res.json({
-        Status: "NOtOK",
-        Message: "putSignedUrl is a required Field",
+        Status: "Failed",
+        Message: "Input Issue: The field file is a required.",
       });
 
-    if (req.file.mimetype.includes("image")) {
-      let formattedFile = await sharp(req.file.buffer)
-        .resize({ width: 1000, height: 1000 })
+    if (!file.mimetype.includes("image"))
+      return res.json({
+        Status: "Failed",
+        Message: "Input Issue: Only images are accepted for the file field",
+      });
+
+    if (!file.buffer)
+      return res.status(500).json({
+        Status: "Failed",
+        Message: "Internal Issue: File buffer not found",
+      });
+
+    const uploadDetail = sizeOf(file.buffer);
+
+    let uploadBuffer = file.buffer;
+
+    // Formate the image to fit the with the following standard
+    // width: 1000px, and height: 1000px, type: jpg
+
+    if (uploadDetail.width > 1000)
+      uploadBuffer = await sharp(uploadBuffer)
+        .resize({ width: 1000 })
         .toBuffer();
 
-      let uploadImage = await axios({
-        method: "put",
-        url: req.body.putSignedUrl,
-        data: formattedFile,
-        headers: {
-          "Content-Type": "image/jpg",
-        },
-      });
-    }
-    // console.log("uploadImage", uploadImage.status);
-    res.json({ status: "OK", message: "File Upload" });
+    if (uploadDetail.height > 1000)
+      uploadBuffer = await sharp(uploadBuffer)
+        .resize({ height: 1000 })
+        .toBuffer();
+
+    if (uploadDetail.type !== "jpg")
+      uploadBuffer = await sharp(uploadBuffer).toFormat("jpg").toBuffer();
+
+    // Upload the formatted file to s3
+
+    await axios({
+      method: "put",
+      url: signedUrl,
+      data: uploadBuffer,
+      headers: {
+        "Content-Type": "image/jpg",
+      },
+    });
+
+    res.json({
+      status: "Successful",
+      message: "File Uploaded",
+    });
   } catch (e) {
     console.log(e);
-    res.json({ status: "NotOk", message: e });
+    res.json({ status: "Failed", message: e });
+  }
+});
+
+app.put("/uploadAudio", upload.single("file"), async (req: any, res) => {
+  try {
+    let { signedUrl } = req.body;
+    let file = req.file;
+
+    // Validate the input fields
+
+    if (!signedUrl)
+      return res.json({
+        Status: "Failed",
+        Message: "Input Issue: The field signedUrl is a required.",
+      });
+
+    if (!file)
+      return res.json({
+        Status: "Failed",
+        Message: "Input Issue: The field file is a required.",
+      });
+
+    if (!file.mimetype.includes("audio"))
+      return res.json({
+        Status: "Failed",
+        Message: "Input Issue: Only Audio are accepted for the file field",
+      });
+
+    if (!file.buffer)
+      return res.status(500).json({
+        Status: "Failed",
+        Message: "Internal Issue: File buffer not found",
+      });
+
+    let uploadBuffer = file.buffer;
+    // Upload the formatted file to s3
+
+    await axios({
+      method: "put",
+      url: signedUrl,
+      data: uploadBuffer,
+      headers: {
+        "Content-Type": "audio/mp3",
+      },
+    });
+
+    res.json({
+      status: "Successful",
+      message: "File Uploaded",
+    });
+  } catch (e) {
+    console.log(e);
+    res.status(500).json({ status: "Failed", message: e });
   }
 });
 
 app.use((req, res, next) => {
   return res.status(404).json({
-    error: "Not Found",
+    Status: "Error",
+    Message: "Route Issue: Given route doesn't exist",
   });
 });
 
